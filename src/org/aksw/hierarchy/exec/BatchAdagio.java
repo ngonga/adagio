@@ -8,7 +8,15 @@ import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
 import java.util.Map;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import org.apache.commons.cli.CommandLine;
+import org.apache.commons.cli.CommandLineParser;
+import org.apache.commons.cli.DefaultParser;
+import org.apache.commons.cli.Options;
+import org.apache.commons.cli.ParseException;
 import org.simba.hierarchy.adagio.Adagio;
+import org.simba.hierarchy.adagio.BottomUpAdagio;
 import org.simba.hierarchy.adagio.FrobeniusNorm;
 import org.simba.hierarchy.adagio.LabeledMatrix;
 import org.simba.hierarchy.adagio.ManhattanNorm;
@@ -35,7 +43,7 @@ public class BatchAdagio {
      * @param ending Format of input file
      * @param format
      */
-    public static void run(String folder, String ending, String format) {
+    public static void run(String folder, String ending, String format, boolean preprocessing, boolean bottomUpRanking) {
         LabeledMatrix m, m2;
         try {
             File f = new File(folder);
@@ -61,9 +69,21 @@ public class BatchAdagio {
                         m = new LabeledMatrix(path, format);
                         // need to clone the matrix to ensure that the DCI values
                         // and such make sense
-                        m2 = new LabeledMatrix(path, format).getTieResolvedMatrix();
+
+                        //set preprocessing
+                        if (preprocessing) {
+                            m2 = new LabeledMatrix(path, format).getTieResolvedMatrix();
+                        } else {
+                            m2 = new LabeledMatrix(path, format);
+                        }
                         begin = System.currentTimeMillis();
-                        d = new Adagio(m2.data.getArrayCopy());
+
+                        // set ranking type
+                        if (!bottomUpRanking) {
+                            d = new Adagio(m2.data.getArrayCopy());
+                        } else {
+                            d = new BottomUpAdagio(m2.data.getArrayCopy());
+                        }
                         try {
                             //run and output adagio
                             d.run2();
@@ -88,11 +108,11 @@ public class BatchAdagio {
                             report.append(alValues.get("pl")).append("\t");
 
                             //add error
-                            report.append(FrobeniusNorm.getNorm(copy.data, m2.data)/FrobeniusNorm.getNorm(m2.data)).append("\t");
-                            report.append(ManhattanNorm.getNorm(copy.data, m2.data)/ManhattanNorm.getNorm(m2.data)).append("\t");                            
-                            report.append(FrobeniusNorm.getRemovedEdges(copy.data, m2.data)/FrobeniusNorm.getNumberofEdges(m2.data)).append("\t"); 
+                            report.append(FrobeniusNorm.getNorm(copy.data, m2.data) / FrobeniusNorm.getNorm(m2.data)).append("\t");
+                            report.append(ManhattanNorm.getNorm(copy.data, m2.data) / ManhattanNorm.getNorm(m2.data)).append("\t");
+                            report.append(FrobeniusNorm.getRemovedEdges(copy.data, m2.data) / FrobeniusNorm.getNumberofEdges(m2.data)).append("\t");
                             report.append(dci.getValue(m)).append("\t");
-                            report.append(end-begin).append("\n");
+                            report.append(end - begin).append("\n");
                         } catch (Exception e) {
                             System.err.println("Error processing " + filenames[i]);
                             e.printStackTrace();
@@ -115,19 +135,63 @@ public class BatchAdagio {
      * @param args See above
      */
     public static void main(String args[]) {
-        String folder = "E:/tmp/liza";
-        String format = "csv";
-        String ending = "csv";
-        if (args.length > 0) {
-            folder = args[0];
+        Logger logger = Logger.getLogger(BatchAdagio.class.getName());
+        try {
+            Options options = new Options();
+            options.addOption("folder", true, "Folder containing the files to process");
+            options.addOption("format", true, "Format of the files to process. Can be");
+            options.addOption("ending", true, "Ending of the files to process. Default is \".csv\"");
+            options.addOption("preprocessing", true, "Switch for the preprocessing. Default is true");
+            options.addOption("ranking", true, "Switch for the bottom-up rank computation. Default is true");
+            CommandLineParser parser = new DefaultParser();
+            CommandLine cmd = parser.parse(options, args);
+            String folder = "";
+            String format = "csv";
+            String ending = "csv";
+            boolean preprocessing = true;
+            boolean bottomUpRanking = true;
+            //set folder
+            if (!cmd.hasOption("folder")) {
+                logger.log(Level.SEVERE, "No folder set.  Exiting.");
+                System.exit(1);
+            } else {
+                folder = cmd.getOptionValue("folder");
+            }
+            logger.log(Level.INFO, "Folder set to " + folder);
+
+            //set format
+            if (cmd.hasOption("format")) {
+                format = cmd.getOptionValue("format");
+
+            }
+            logger.log(Level.INFO, "Format set to " + format);
+            //set ending
+            if (cmd.hasOption("ending")) {
+                ending = cmd.getOptionValue("ending");
+            }
+            logger.log(Level.INFO, "Ending set to " + ending);
+            //set preprocessing
+            if (cmd.hasOption("preprocessing")) {
+                            logger.log(Level.INFO, "Preprocessing input " + cmd.getOptionValue("preprocessing"));
+                if (cmd.getOptionValue("preprocessing").toLowerCase().startsWith("f")) {
+                    preprocessing = false;
+                }
+            }
+            logger.log(Level.INFO, "Preprocessing set to " + preprocessing);
+            //set ranking
+            if (cmd.hasOption("ranking")) {
+                if (cmd.getOptionValue("ranking").toLowerCase().startsWith("t")) {
+                    bottomUpRanking = false;
+                }
+            }
+            logger.log(Level.INFO, "Bottom up ranking set to " + bottomUpRanking);
+            
+            //run
+            run(folder, ending, format, preprocessing, bottomUpRanking);
+
+        } catch (ParseException ex) {
+            logger.log(Level.SEVERE, null, ex);
         }
-        if (args.length > 1) {  
-            ending = args[1];
-        }
-        if (args.length > 2) {
-            format = args[2];
-        }
-        run(folder, ending, format);
     }
 
     /**
